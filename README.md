@@ -4,9 +4,29 @@ Monorepo of skills for Claude Code.
 
 ## Skills
 
+These three compose into one flow — see [Scope flow](#scope-flow).
+
 | Name | Description |
 |------|-------------|
-| [scope-creep](skills/scope-creep/SKILL.md) | Flag changes on a branch that nobody asked for — compares the diff against the stated scope, verifies each suspect with an adversarial subagent, and optionally reverts confirmed creep. |
+| [work-plan](skills/work-plan/SKILL.md) | Start a unit of work — writes an append-only `scope.md` contract plus a mutable `plan.md`. |
+| [scope-amend](skills/scope-amend/SKILL.md) | Widen, narrow, or correct the scope on the record, by appending a dated amendment. |
+| [scope-creep](skills/scope-creep/SKILL.md) | Flag changes not traceable to the contract; verifies each suspect adversarially and can revert confirmed creep. |
+
+## Scope flow
+
+```
+/work-plan "fix token expiry in auth middleware"
+    -> .claude/work/fix-token-expiry/{scope.md, plan.md}   (gitignored)
+
+   ...development...
+
+/scope-creep quick          # cheap checkpoint, no subagents
+/scope-amend "the retry belongs in the pool, not the client"
+/scope-creep                # pre-PR gate, verified findings
+/scope-creep apply          # revert confirmed creep, saved as a patch first
+```
+
+`scope.md` is **append-only**; `plan.md` is freely rewritten. The asymmetry is deliberate: an editable contract gets silently rewritten to match whatever was built, which makes the creep check validate code against itself. `/scope-amend` is the only way scope changes, so widening is always dated and attributed.
 
 ## Structure
 
@@ -19,10 +39,15 @@ skills/
     ...           # optional scripts, references, assets
 ```
 
-## Usage
-
-Symlink a skill into `~/.claude/skills/` (global) or `.claude/skills/` (project), then invoke it with `/<skill-name>`:
+## Install
 
 ```bash
-ln -s "$PWD/skills/scope-creep" /path/to/repo/.claude/skills/scope-creep
+./install.sh                    # all skills -> ~/.claude/skills
+./install.sh scope-creep        # just one
+./install.sh --project ~/repo   # -> ~/repo/.claude/skills
+./install.sh --list             # what's available
+./install.sh --dry-run          # print, change nothing
+./install.sh --uninstall        # remove this repo's symlinks
 ```
+
+Skills are symlinked, so edits under `skills/` take effect with no re-install. Restart Claude Code or open a new session to pick up newly added skills, then invoke with `/<skill-name>`.

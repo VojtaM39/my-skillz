@@ -1,7 +1,7 @@
 ---
 name: scope-creep
-description: Flag changes on a branch that nobody asked for — compares the diff against the stated scope and reports every change not traceable to it (drive-by fixes, adjacent refactors, silent scope expansion). Verifies each suspect with an adversarial subagent before accusing, and with `apply` reverts confirmed creep after saving it as a patch. Use when you want to know whether an agent added unrelated stuff to a branch, before opening or merging a PR.
-argument-hint: "[scope statement] [plan=<path>] [pr=<n>] [apply]"
+description: Flag changes on a branch that nobody asked for — compares the diff against the scope contract (from `/work-plan`, or inferred) and reports every change not traceable to it (drive-by fixes, adjacent refactors, silent scope expansion). Verifies each suspect with an adversarial subagent before accusing, and with `apply` reverts confirmed creep after saving it as a patch. Use when you want to know whether an agent added unrelated stuff to a branch, before opening or merging a PR.
+argument-hint: "[scope statement] [slug=<name>] [plan=<path>] [pr=<n>] [apply] [quick]"
 context: fork
 ---
 
@@ -31,15 +31,25 @@ Parsing is **silent** — reason it out and carry the result forward. Do not wri
 Tokenize by whitespace, strip recognized tokens, and treat **everything left over, rejoined, as the scope statement**:
 
 - **apply** — `apply=true` if any token equals "apply" exactly (case-insensitive). `applying` / `--apply` do not match.
-- **plan** — `plan=<path>` sets the scope source file.
+- **slug** — `slug=<name>` names the unit of work under `.claude/work/` to judge against.
+- **plan** — `plan=<path>` sets an explicit scope source file.
 - **pr** — a bare positive integer, `pr=<n>`, or a `github.com/.../pull/<n>` URL sets `pr`.
+- **quick** — `quick=true` if any token equals "quick". Skips step 5's verification fan-out: suspects are reported unverified, and `apply` is refused. For mid-development checkpoints, where drift is cheap to undo.
 - **scopeArg** — the unrecognized remainder.
 
-If `apply=true`, step 7 is a commitment, not a draft — do not re-litigate it at the end.
+If `apply=true`, step 7 is a commitment, not a draft — do not re-litigate it at the end. `quick` and `apply` together is an error: say so and run as `quick` without applying.
 
 ### 2. Establish the scope contract
 
-**This step is load-bearing.** Everything downstream is judged against the contract, so a wrong contract produces a confidently wrong report. Take the first source that yields something usable:
+**This step is load-bearing.** Everything downstream is judged against the contract, so a wrong contract produces a confidently wrong report.
+
+**Look for a unit of work first.** Read `.claude/work/*/scope.md` and match frontmatter `branch:` against `git branch --show-current`, or take `slug=` if given. A unit found this way is authoritative — it is a contract the user approved before the code existed, which no other source can claim.
+
+The **effective contract** is the unit's live `In scope` items (`S<n>`) plus its live amendments (`A<n>`), minus anything an amendment marked superseded. `A` items count exactly like `S` items — that is the entire purpose of `/scope-amend`. The `Non-goals` section is part of the contract too, and a strong one: a change matching a non-goal is confirmed creep and needs no verification in step 5.
+
+If several units match the branch, list them and ask. Do not merge two contracts.
+
+**With no unit**, fall back to the first source that yields something usable:
 
 1. `scopeArg`
 2. the `plan=<path>` file
@@ -47,9 +57,9 @@ If `apply=true`, step 7 is a commitment, not a draft — do not re-litigate it a
 4. branch name plus commit subjects — `git log --oneline <base>..HEAD`
 5. the original ask in the inherited conversation
 
-Then, **whichever source won, union in the conversation**: scan the inherited context for follow-up asks and mid-session corrections and add them to the contract. A change the user requested in message 7 is in scope even though it appears in no plan file, PR body, or commit message. This is the single largest source of false accusations — do not skip it.
+In the fallback case, **union in the conversation**: scan the inherited context for follow-up asks and mid-session corrections and add them to the contract. A change the user requested in message 7 is in scope even though it appears in no PR body or commit message. This is the largest source of false accusations in the fallback path. (With a unit, this is *not* a fallback — an ask made in conversation and never amended into the contract is a legitimate finding. Report it as `unamended` rather than creep, and suggest `/scope-amend`.)
 
-Write the contract out as an explicit bulleted list of what was asked, and carry that list **verbatim** into every agent prompt below. If no source yields anything usable, say so and ask — do not invent a contract and judge against it.
+Carry the contract **verbatim, with its IDs**, into every agent prompt below. If no source yields anything usable, say so and point at `/work-plan` — do not invent a contract and judge against it.
 
 ### 3. Gather the diff
 
@@ -71,7 +81,7 @@ Gate on the counts from step 3:
 - **≤10 files and ≤800 lines** — classify in this context.
 - **Above either threshold** — cluster the changed files by module or directory (cap 5 clusters), then one discovery `Agent` per cluster, all batched into a single parallel message. Give each the contract verbatim plus its file list and the hunks for its files; tell it not to re-derive the diff. Merge and dedupe the returned suspects.
 
-Assign every hunk one category:
+Assign every hunk one category, and for anything not creep, **name the contract ID it traces to** (`S2`, `A1`). A change that traces to no ID is a suspect by definition; that is what the IDs are for.
 
 | Category | Meaning | Creep? |
 |---|---|---|
@@ -84,6 +94,8 @@ Assign every hunk one category:
 **`creep-expansion` is the one to hunt for.** It is the most common agent failure and the only category a file-path-versus-scope check misses entirely, because the file is right and the diff reads as on-topic. It looks like: a config option nobody requested, a narrow fix generalized into a framework, error handling for cases the user never raised, an abstraction introduced for a hypothetical second call site. Ask of every on-topic hunk: *would the contract be satisfied without this?* If yes, it is expansion.
 
 ### 5. Verify every suspect — adversarially
+
+**Skip this step entirely when `quick=true`** — report suspects as `UNVERIFIED` and say so in the header. Also skip verification for any suspect that matches a stated non-goal: the user already ruled it out, so there is nothing to refute.
 
 One `Agent` per suspect, all batched into a single parallel message. Cluster suspects that share a root cause into one call — five agents re-reading one file to confirm five symptoms of one decision cost five times what one agent does. Pass `effort: 'low'` for bounded single-file checks; keep the default when the claim spans subsystems.
 
@@ -119,26 +131,34 @@ Saying "read-only" is not enough — verifiers have edited files after being tol
 Open with the header, so the caller can see what was judged against:
 
 ```
-Scope contract (source: arg | plan file | PR body | commits | conversation):
-  - <item>
-  - <item>
+Unit: <slug> (.claude/work/<slug>/scope.md) | none — contract inferred from <source>
+Effective contract:
+  - S1 <item>
+  - A1 <item, amended <date>>
+  - (S3 superseded by A2)
+Non-goals: <list>
 Reviewed: <branch> vs <base> (<N> files, <M> lines, <U> uncommitted)
 Discovery: main context | <k> cluster agents
+Verification: <n> agents | skipped (quick)
 Excluded as noise: <lockfiles/generated, or none>
 ```
 
-Then the findings table — only `UNRELATED` and `UNCLEAR` survivors appear; anything a verifier rated `REQUIRED` is dropped silently.
+Then the findings table — only `UNRELATED`, `UNCLEAR`, and (in quick mode) `UNVERIFIED` survivors appear; anything a verifier rated `REQUIRED` is dropped silently.
 
-| # | File:line | Change | Category | Verdict | Disposition |
-|---|-----------|--------|----------|---------|-------------|
+| # | File:line | Change | Category | Verdict | Traces to | Disposition |
+|---|-----------|--------|----------|---------|-----------|-------------|
 
-Disposition is one of `revert`, `split to own PR`, `keep — trivial`, `ask the user`. Close with exactly one line:
+`Traces to` is the contract ID a change was argued to serve, or `—` for none. A table full of `—` with a thin contract means the contract is the problem, not the code — say that rather than listing thirty findings.
+
+Disposition is one of `revert`, `amend the scope` (the work is legitimate and the contract should catch up — `/scope-amend`), `split to own PR`, `keep — trivial`, `ask the user`. Close with exactly one line:
 
 `SCOPE: CLEAN` or `SCOPE: CREEP — <n> confirmed, <m> unclear`
 
 **Scope shortfall.** The same comparison surfaces contract items with no corresponding change. That is not creep, but list it in a short closing section — it is free and it matters. Never auto-fix it; implementing missing work is not descoping.
 
 ### 7. Apply — only when `apply=true`
+
+Never apply in `quick` mode; unverified suspects are not grounds for reverting anything.
 
 1. Revert `UNRELATED` verdicts only. **Never revert `UNCLEAR`** — report those and ask.
 2. **Save before touching anything.** Write the hunks to be reverted to `scope-creep-reverted.patch` at the repo root and name that path in the summary. Nothing this skill removes should be unrecoverable.
@@ -148,4 +168,6 @@ Disposition is one of `revert`, `split to own PR`, `keep — trivial`, `ask the 
 
 ### When to skip
 
-A single trivial commit, a diff that is entirely generated files, or no usable scope source at all (no arg, no plan, no PR, nothing in the conversation) — in the last case, ask for the scope rather than guessing at one.
+A single trivial commit, or a diff that is entirely generated files.
+
+If there is no usable scope source at all — no unit, no arg, no PR, nothing in the conversation — stop and point at `/work-plan`. A contract reverse-engineered from the code it is meant to judge validates nothing.
