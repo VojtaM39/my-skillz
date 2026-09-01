@@ -15,6 +15,19 @@ Opens a **unit of work**: a feature, fix, or refactor, tracked in `.claude/work/
 
 The asymmetry is the point. If the contract were editable, drift would silently rewrite it to match whatever got built, and `/scope-creep` would then validate code against a contract moved to fit that code. Append-only makes widening a visible, dated act.
 
+## Invocation
+
+The one-liner is the least convenient form. Longer asks work better as:
+
+| Form | When |
+|---|---|
+| `/work-plan` (no args) | The ask is already in the conversation — messages, pasted logs, screenshots. Step 3 picks it up. |
+| `/work-plan` after plan mode | `Shift+Tab` into plan mode, get a plan approved, then this. Step 3 consumes it instead of re-planning. |
+| `/work-plan from=<path>` | The ask lives in a file. Inline `@file` references work too. |
+| `/work-plan "<one line>"` | Small, obvious units. |
+
+Multiline inside the prompt: `\` + `Enter` or `Ctrl+J` in any terminal, `Shift+Enter` in most. Images: drag and drop, `Ctrl+V` (not `Cmd+V`), or give a path. Images never arrive through `$ARGUMENTS` — they are message content, so read them from the conversation.
+
 ## 1. Parse arguments
 
 `<ARGS>$ARGUMENTS</ARGS>`
@@ -48,6 +61,8 @@ Take the first source that yields something usable:
 5. nothing usable → ask. Do not invent a contract.
 
 Whichever source won, union in follow-up asks and corrections from the conversation.
+
+**Images are part of the ask.** A mockup, a screenshot of the failure, a diagram of the target architecture — read them and turn what they show into checkable `In scope` items, citing what you read out of them: `S2 — the empty state matches the mockup: centered icon, one-line copy, no CTA`. Write it so the contract stands alone once the image is out of context; an image is not self-documenting six sessions later, and `/scope-creep` will never see it.
 
 ## 4. Research — only if you are actually planning
 
@@ -114,6 +129,10 @@ slug: <slug>
 
 <record as you go: what was chosen and what it ruled out>
 
+## Noticed, not done
+
+_Appended by `/work-do`: seen while implementing, deliberately not done._
+
 ## Open questions
 
 <or "none">
@@ -131,4 +150,4 @@ Show the user the `In scope` and `Non-goals` sections and ask for a correction p
 
 This is the one cheap moment to fix the contract. After this it is append-only, and every later check judges against it — so a wrong item here produces confidently wrong reports for the rest of the unit. Say plainly that amendments are how it changes from now on.
 
-Then report the two file paths and stop. Writing the plan is not doing the work — do not start implementing unless the user asks.
+Then report the two file paths and stop. Writing the plan is not doing the work — hand off to `/work-do`, which implements the steps against the contract and resolves the unit from the branch, so it works in a later session too. Do not start implementing yourself unless the user asks.
