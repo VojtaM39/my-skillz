@@ -4,11 +4,12 @@ Monorepo of skills for Claude Code.
 
 ## Skills
 
-These three compose into one flow — see [Scope flow](#scope-flow).
+These four compose into one flow — see [Scope flow](#scope-flow).
 
 | Name | Description |
 |------|-------------|
 | [work-plan](skills/work-plan/SKILL.md) | Start a unit of work — writes an append-only `scope.md` contract plus a mutable `plan.md`. |
+| [work-do](skills/work-do/SKILL.md) | Implement the plan's steps against the contract, ticking them off as they land; refuses work that traces to no scope item. |
 | [scope-amend](skills/scope-amend/SKILL.md) | Widen, narrow, or correct the scope on the record, by appending a dated amendment. |
 | [scope-creep](skills/scope-creep/SKILL.md) | Flag changes not traceable to the contract; verifies each suspect adversarially and can revert confirmed creep. |
 
@@ -18,13 +19,18 @@ These three compose into one flow — see [Scope flow](#scope-flow).
 /work-plan "fix token expiry in auth middleware"
     -> .claude/work/fix-token-expiry/{scope.md, plan.md}   (gitignored)
 
-   ...development...
-
+/work-do                    # implement unticked steps, tick them off
+/work-do next               # or one step at a time
 /scope-creep quick          # cheap checkpoint, no subagents
 /scope-amend "the retry belongs in the pool, not the client"
+/work-do                    # resume — picks up where the ticks left off
 /scope-creep                # pre-PR gate, verified findings
 /scope-creep apply          # revert confirmed creep, saved as a patch first
 ```
+
+Only `/work-plan` needs arguments. Everything after it resolves the unit from the current branch (falling back to the single active unit), so the flow survives a new session — `slug=` is just an override for when that lookup is ambiguous.
+
+Longer asks do not belong on the `/work-plan` command line: describe the work in normal messages, paste screenshots (`Ctrl+V`), or get a plan approved in plan mode, then run `/work-plan` bare — it reads the ask from the conversation.
 
 `scope.md` is **append-only**; `plan.md` is freely rewritten. The asymmetry is deliberate: an editable contract gets silently rewritten to match whatever was built, which makes the creep check validate code against itself. `/scope-amend` is the only way scope changes, so widening is always dated and attributed.
 
