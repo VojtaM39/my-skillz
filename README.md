@@ -4,6 +4,8 @@ Monorepo of skills for Claude Code.
 
 ## Skills
 
+### Scope
+
 These four compose into one flow — see [Scope flow](#scope-flow).
 
 | Name | Description |
@@ -13,11 +15,27 @@ These four compose into one flow — see [Scope flow](#scope-flow).
 | [scope-amend](skills/scope-amend/SKILL.md) | Widen, narrow, or correct the scope on the record, by appending a dated amendment. |
 | [scope-creep](skills/scope-creep/SKILL.md) | Flag changes not traceable to the contract; verifies each suspect adversarially and can revert confirmed creep. |
 
+### Hygiene
+
+| Name | Description |
+|------|-------------|
+| [comment-audit](skills/comment-audit/SKILL.md) | Flag comments that restate the code, contradict it, or say one fact three times; verifies before accusing and can remove and trim them. |
+
+```bash
+/comment-audit                  # every tracked source file, report only
+/comment-audit src/ Dockerfile  # just these paths
+/comment-audit diff             # only comments on lines this branch changed
+/comment-audit quick            # skip verification, cheap checkpoint
+/comment-audit diff apply       # remove and trim, then build/lint/test
+```
+
+Comments only — the apply pass asserts every changed line is a comment or blank and reverts the file if any executable line moved. Vendored files are audited but never auto-changed: cleaning them costs a clean diff against upstream.
+
 ## Scope flow
 
 ```
 /work-plan "fix token expiry in auth middleware"
-    -> .claude/work/fix-token-expiry/{scope.md, plan.md}   (gitignored)
+    -> ~/.claude/work/-Users-me-repo/fix-token-expiry/{scope.md, plan.md}
 
 /work-do                    # implement unticked steps, tick them off
 /work-do next               # or one step at a time
@@ -27,6 +45,8 @@ These four compose into one flow — see [Scope flow](#scope-flow).
 /scope-creep                # pre-PR gate, verified findings
 /scope-creep apply          # revert confirmed creep, saved as a patch first
 ```
+
+Units are stored **outside the repo** — `~/.claude/work/<repo-path-dashed>/<slug>/` — so nothing this flow writes can land in the working tree, a PR diff, or `.gitignore`. The key comes from `git rev-parse --git-common-dir`, so all worktrees of a repo share one store and same-named clones stay separate.
 
 Only `/work-plan` needs arguments. Everything after it resolves the unit from the current branch (falling back to the single active unit), so the flow survives a new session — `slug=` is just an override for when that lookup is ambiguous.
 
