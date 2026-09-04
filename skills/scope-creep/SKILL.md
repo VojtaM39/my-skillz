@@ -31,7 +31,7 @@ Parsing is **silent** — reason it out and carry the result forward. Do not wri
 Tokenize by whitespace, strip recognized tokens, and treat **everything left over, rejoined, as the scope statement**:
 
 - **apply** — `apply=true` if any token equals "apply" exactly (case-insensitive). `applying` / `--apply` do not match.
-- **slug** — `slug=<name>` names the unit of work under `.claude/work/` to judge against.
+- **slug** — `slug=<name>` names the unit of work in the repo's store (step 2) to judge against.
 - **plan** — `plan=<path>` sets an explicit scope source file.
 - **pr** — a bare positive integer, `pr=<n>`, or a `github.com/.../pull/<n>` URL sets `pr`.
 - **quick** — `quick=true` if any token equals "quick". Skips step 5's verification fan-out: suspects are reported unverified, and `apply` is refused. For mid-development checkpoints, where drift is cheap to undo.
@@ -43,7 +43,19 @@ If `apply=true`, step 7 is a commitment, not a draft — do not re-litigate it a
 
 **This step is load-bearing.** Everything downstream is judged against the contract, so a wrong contract produces a confidently wrong report.
 
-**Look for a unit of work first.** Read `.claude/work/*/scope.md` and match frontmatter `branch:` against `git branch --show-current`, or take `slug=` if given. A unit found this way is authoritative — it is a contract the user approved before the code existed, which no other source can claim.
+**Look for a unit of work first.** Units live outside the repo, in a store keyed by the repo path — resolve it before looking:
+
+```bash
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+if GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null); then
+    REPO_ROOT="$(dirname "$(cd "$GIT_COMMON" && pwd)")"
+else
+    REPO_ROOT="$PWD"
+fi
+WORK_DIR="$CLAUDE_DIR/work/$(printf %s "$REPO_ROOT" | tr / -)"
+```
+
+Read `$WORK_DIR/*/scope.md` and match frontmatter `branch:` against `git branch --show-current`, or take `slug=` if given. A unit found this way is authoritative — it is a contract the user approved before the code existed, which no other source can claim.
 
 The **effective contract** is the unit's live `In scope` items (`S<n>`) plus its live amendments (`A<n>`), minus anything an amendment marked superseded. `A` items count exactly like `S` items — that is the entire purpose of `/scope-amend`. The `Non-goals` section is part of the contract too, and a strong one: a change matching a non-goal is confirmed creep and needs no verification in step 5.
 
@@ -131,7 +143,7 @@ Saying "read-only" is not enough — verifiers have edited files after being tol
 Open with the header, so the caller can see what was judged against:
 
 ```
-Unit: <slug> (.claude/work/<slug>/scope.md) | none — contract inferred from <source>
+Unit: <slug> (<resolved path to scope.md>) | none — contract inferred from <source>
 Effective contract:
   - S1 <item>
   - A1 <item, amended <date>>

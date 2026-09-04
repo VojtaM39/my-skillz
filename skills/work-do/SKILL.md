@@ -1,6 +1,6 @@
 ---
 name: work-do
-description: Execute the current unit of work — reads `.claude/work/<slug>/{scope.md,plan.md}`, implements the unticked steps, and ticks them off as they land. Refuses work that traces to no contract item, pointing at `/scope-amend` instead of silently widening. Use to start or resume implementation after `/work-plan`, in this session or a later one.
+description: Execute the current unit of work — reads `scope.md` and `plan.md` from the repo's unit store under `~/.claude/work/`, implements the unticked steps, and ticks them off as they land. Refuses work that traces to no contract item, pointing at `/scope-amend` instead of silently widening. Use to start or resume implementation after `/work-plan`, in this session or a later one.
 argument-hint: "[slug=<name>] [next] [steps=<n,n>] [no-verify]"
 ---
 
@@ -12,6 +12,22 @@ Two jobs, and the second is the one that matters: land the steps, and refuse wha
 
 `scope.md` is not yours to touch. `plan.md` is.
 
+## Where units live
+
+Units live **outside the repo**, in a store keyed by the repo path. Nothing this flow writes ever lands in the working tree, the diff, or `.gitignore` — the repo under review is not the place to keep notes about the repo under review. Resolve the store first, on every run:
+
+```bash
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+if GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null); then
+    REPO_ROOT="$(dirname "$(cd "$GIT_COMMON" && pwd)")"
+else
+    REPO_ROOT="$PWD"
+fi
+WORK_DIR="$CLAUDE_DIR/work/$(printf %s "$REPO_ROOT" | tr / -)"
+```
+
+One unit per `$WORK_DIR/<slug>/`. The key comes from `--git-common-dir`, so every worktree of a repo resolves to the same store, and two clones sharing a basename do not collide. Report resolved absolute paths, never `$WORK_DIR` itself.
+
 ## 1. Parse arguments
 
 `<ARGS>$ARGUMENTS</ARGS>`
@@ -21,7 +37,7 @@ If you see the literal placeholder `<dollar>ARGUMENTS`, read the args from the u
 - `slug=<name>` — target unit. If absent, resolve from the current branch (step 2).
 - `next` — implement only the first unticked step, then stop and report. For driving one step at a time.
 - `steps=<n,n>` — implement only these steps, by 1-based position in `## Steps`.
-- `no-verify` — skip step 6's build/lint/test run. For a mid-development checkpoint.
+- `no-verify` — skip step 7's build/lint/test run. For a mid-development checkpoint.
 
 No args means every unticked step, in order.
 
@@ -29,7 +45,7 @@ No args means every unticked step, in order.
 
 ```bash
 git branch --show-current
-ls .claude/work/
+ls "$WORK_DIR"
 ```
 
 Match `scope.md` frontmatter `branch:` against the current branch.
@@ -91,7 +107,7 @@ Report pass/fail per command with the real failure output. A step is not done be
 ## 8. Report
 
 ```
-Unit: <slug> (.claude/work/<slug>/) — resolved by <branch | only active unit>
+Unit: <slug> ($WORK_DIR/<slug>/, printed resolved) — resolved by <branch | only active unit>
 Contract served: S1, A1
 Steps: <n> landed, <m> remaining, <k> blocked
 Verification: <command> pass | fail — <summary>

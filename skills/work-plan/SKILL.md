@@ -1,12 +1,12 @@
 ---
 name: work-plan
-description: Start a unit of work — writes `.claude/work/<slug>/scope.md` (an append-only contract of what was asked, with explicit non-goals) and `plan.md` (mutable steps and approach). Consumes an already-approved plan file when one exists instead of re-planning. Use at the start of a feature, fix, or refactor so the scope survives across sessions and `/scope-creep` has something to check against.
+description: Start a unit of work — writes `~/.claude/work/<repo-key>/<slug>/scope.md` (an append-only contract of what was asked, with explicit non-goals) and `plan.md` (mutable steps and approach). Consumes an already-approved plan file when one exists instead of re-planning. Use at the start of a feature, fix, or refactor so the scope survives across sessions and `/scope-creep` has something to check against.
 argument-hint: "[the ask] [slug=<name>] [from=<plan-file>]"
 ---
 
 # Work Plan
 
-Opens a **unit of work**: a feature, fix, or refactor, tracked in `.claude/work/<slug>/`. Two files with deliberately different rules:
+Opens a **unit of work**: a feature, fix, or refactor, tracked in a per-repo store outside the repo (see [Where units live](#where-units-live)). Two files with deliberately different rules:
 
 | File | Rule | Holds |
 |---|---|---|
@@ -14,6 +14,22 @@ Opens a **unit of work**: a feature, fix, or refactor, tracked in `.claude/work/
 | `plan.md` | Freely mutable, yours to rewrite | Approach, steps, decisions, open questions |
 
 The asymmetry is the point. If the contract were editable, drift would silently rewrite it to match whatever got built, and `/scope-creep` would then validate code against a contract moved to fit that code. Append-only makes widening a visible, dated act.
+
+## Where units live
+
+Units live **outside the repo**, in a store keyed by the repo path. Nothing this flow writes ever lands in the working tree, the diff, or `.gitignore` — the repo under review is not the place to keep notes about the repo under review. Resolve the store first, on every run:
+
+```bash
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+if GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null); then
+    REPO_ROOT="$(dirname "$(cd "$GIT_COMMON" && pwd)")"
+else
+    REPO_ROOT="$PWD"
+fi
+WORK_DIR="$CLAUDE_DIR/work/$(printf %s "$REPO_ROOT" | tr / -)"
+```
+
+One unit per `$WORK_DIR/<slug>/`. The key comes from `--git-common-dir`, so every worktree of a repo resolves to the same store, and two clones sharing a basename do not collide. Report resolved absolute paths, never `$WORK_DIR` itself.
 
 ## Invocation
 
@@ -45,10 +61,10 @@ Tokenize, strip recognized tokens, and treat the remainder as **the ask**:
 git branch --show-current
 ```
 
-Check whether `.claude/work/<slug>/` already exists.
+Resolve `$WORK_DIR` as above, then check whether `$WORK_DIR/<slug>/` already exists.
 
 - **Exists** — do **not** overwrite. Read both files, show the user the current contract and plan status, and ask whether they want to continue this unit, amend it (`/scope-amend`), or start a new one under a different slug. Overwriting a scope contract destroys the record this whole flow exists to keep.
-- **Does not exist** — proceed. Also check for other units in `.claude/work/` whose `scope.md` frontmatter names the current branch; if one exists under a different slug, say so before creating a second unit on the same branch.
+- **Does not exist** — proceed. Also check for other units in `$WORK_DIR` whose `scope.md` frontmatter names the current branch; if one exists under a different slug, say so before creating a second unit on the same branch.
 
 ## 3. Establish the ask
 
@@ -77,6 +93,7 @@ Items get **stable IDs** (`S1`, `S2`, …). `/scope-creep` cites them, so a chan
 ```markdown
 ---
 slug: <slug>
+repo: <REPO_ROOT>
 branch: <current branch>
 created: <output of `date +%F`>
 status: active
@@ -140,14 +157,10 @@ _Appended by `/work-do`: seen while implementing, deliberately not done._
 
 Rewrite this file freely as the work evolves. Tick steps off as they land.
 
-## 7. Ignore the directory
-
-Ensure `.claude/work/` is ignored — append it to `.gitignore` if not already covered. These are working notes; they should not land in the PR diff, where a per-branch file accumulates in the default branch and conflicts.
-
-## 8. Confirm the contract
+## 7. Confirm the contract
 
 Show the user the `In scope` and `Non-goals` sections and ask for a correction pass before starting work.
 
 This is the one cheap moment to fix the contract. After this it is append-only, and every later check judges against it — so a wrong item here produces confidently wrong reports for the rest of the unit. Say plainly that amendments are how it changes from now on.
 
-Then report the two file paths and stop. Writing the plan is not doing the work — hand off to `/work-do`, which implements the steps against the contract and resolves the unit from the branch, so it works in a later session too. Do not start implementing yourself unless the user asks.
+Then report the two absolute file paths and stop. Writing the plan is not doing the work — hand off to `/work-do`, which implements the steps against the contract and resolves the unit from the branch, so it works in a later session too. Do not start implementing yourself unless the user asks.

@@ -1,6 +1,6 @@
 ---
 name: scope-amend
-description: Widen, narrow, or correct the scope of the current unit of work by appending a dated amendment to `.claude/work/<slug>/scope.md`. Never rewrites existing items — supersedes them on the record. Use when the work turns out to be bigger or smaller than planned, so the change is deliberate and logged instead of silent drift.
+description: Widen, narrow, or correct the scope of the current unit of work by appending a dated amendment to its `scope.md` in the repo's unit store under `~/.claude/work/`. Never rewrites existing items — supersedes them on the record. Use when the work turns out to be bigger or smaller than planned, so the change is deliberate and logged instead of silent drift.
 argument-hint: "[what changed] [slug=<name>] [drop=<S-id>]"
 ---
 
@@ -9,6 +9,22 @@ argument-hint: "[what changed] [slug=<name>] [drop=<S-id>]"
 Scope growth is not automatically wrong — sometimes the work genuinely is bigger than it looked. The defect is **silent** growth. This skill is the ritual that turns "the agent did extra stuff" into "we decided, on record, to expand."
 
 Amendments are **appended**. You never edit or delete an item in `In scope` or `Non-goals`; you supersede it with a new entry. The history is the artifact — a unit amended five times is telling you something about how it was estimated.
+
+## Where units live
+
+Units live **outside the repo**, in a store keyed by the repo path. Nothing this flow writes ever lands in the working tree, the diff, or `.gitignore` — the repo under review is not the place to keep notes about the repo under review. Resolve the store first, on every run:
+
+```bash
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+if GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null); then
+    REPO_ROOT="$(dirname "$(cd "$GIT_COMMON" && pwd)")"
+else
+    REPO_ROOT="$PWD"
+fi
+WORK_DIR="$CLAUDE_DIR/work/$(printf %s "$REPO_ROOT" | tr / -)"
+```
+
+One unit per `$WORK_DIR/<slug>/`. The key comes from `--git-common-dir`, so every worktree of a repo resolves to the same store, and two clones sharing a basename do not collide. Report resolved absolute paths, never `$WORK_DIR` itself.
 
 ## 1. Parse arguments
 
@@ -24,7 +40,7 @@ If you see the literal placeholder `<dollar>ARGUMENTS`, read the args from the u
 
 ```bash
 git branch --show-current
-ls .claude/work/
+ls "$WORK_DIR"
 ```
 
 Match on `scope.md` frontmatter `branch:`. If several match, or none do, list what exists and ask — do not guess which contract to modify.
