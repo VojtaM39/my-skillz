@@ -31,6 +31,24 @@ These four compose into one flow — see [Scope flow](#scope-flow).
 
 Comments only — the apply pass asserts every changed line is a comment or blank and reverts the file if any executable line moved. Vendored files are audited but never auto-changed: cleaning them costs a clean diff against upstream.
 
+### Writing
+
+Style contracts to invoke before an agent writes prose or comments.
+
+| Name | Description |
+|------|-------------|
+| [terse-comments](skills/terse-comments/SKILL.md) | Default is zero comments — one ships only if it carries a fact the code cannot. |
+| [terse-docs](skills/terse-docs/SKILL.md) | Result first, unordered bullets over paragraphs, simple words, hard length budgets. |
+
+```bash
+/terse-comments              # govern every comment written from here on
+/terse-comments src/         # trim the comments in these files now
+/terse-docs                  # govern every doc written from here on
+/terse-docs README.md        # rewrite this doc to the rules
+```
+
+`terse-comments` governs comments as they are written; `comment-audit` judges the ones already in the tree.
+
 ## Scope flow
 
 ```
